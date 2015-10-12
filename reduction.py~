@@ -1,0 +1,63 @@
+import fitsio
+import pdb, sys, os
+import numpy as np
+import matplotlib.pyplot as plt
+from spectroscopy_dev.spectroscopy import stellar as stellar_module
+
+
+# Attributes:
+#    stellar.ddir
+#    stellar.science_images_list = []
+#    stellar.badpix_map = None
+
+# Stellar attributes that could be lists, with each entry corresponding
+# to a different image extension:
+#    stellar.star_names = [ [], [], ... ]
+#    stellar.disp_axis = [ ]
+#    stellar.crossdisp_axis = [ ]
+
+
+def prep_stellar_obj():
+
+    # HAT-P-18
+    ddir = '/media/hdisk1/data1/gtc/hatp18/GTC2018-09ESO/OB0051'
+
+    arc_ext = 'arc'
+    bias_ext = 'bias'
+    flat_ext = 'flat'
+    science_ext = 'object'
+
+    n_first = 332896
+    n_last = 333614
+    framen = range( n_first, n_last+1 )
+    nframes = len( framen )
+    science_dir = os.path.join( ddir, science_ext )
+    science_frames = []
+    for i in range( nframes ):
+        science_frames += [ '0000{0:.0f}-20130520-OSIRIS-OsirisLongSlitSpectroscopy.fits'.format( framen[i] ) ]
+    science_frames = np.array( science_frames, dtype=str )
+
+
+    stellar = stellar_module.stellar()
+    stellar.ddir = science_dir
+    stellar.adir = '/home/tevans/analysis/gtc'
+    stellar.star_names = [ [ 'hatp18' ], [ 'reference' ] ]
+    stellar.science_images_list = os.path.join( science.adir, 'temp.lst' )
+    np.savetxt( stellar.science_images_list, science_frames, dtype=str )
+    stellar.badpix_map = None
+    stellar.disp_axis = 0
+    stellar.crossdisp_axis = 1
+    stellar.next = 2
+
+    # SHOULD THESE IMAGES BE CALIBRATED (DARK, FLAT ETC) BEFORE THIS STEP?
+    image_filenames = np.loadtxt( stellar.science_images_list, dtype=str )
+    nimages = len( images )
+    stellar.jds = np.ones( nimages )
+    stellar.exptime_secs = np.ones( nimages )
+    for i in range( nimages ):
+        image = os.path.join( stellar.ddir, image_filenames[i] )
+        hdu = fitsio.FITS( image )
+        h0 = hdu[0].read_header()
+        stellar.jds[i] = h0['BJD-OBS'] + 2400000.5
+
+    return None
