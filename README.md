@@ -1,2 +1,2 @@
 # GTC
-Routine for analysing GTC data.
+Routines for analysing GTC data.
