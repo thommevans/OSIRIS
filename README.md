@@ -1,2 +1,2 @@
 # GTC
-Routines for analysing GTC data.
+Routines for analysing GTC/OSIRIS data.
