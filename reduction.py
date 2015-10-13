@@ -4,9 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from spectroscopy_dev.spectroscopy import stellar as stellar_module
 
-# HAT-P-18
-ddir = '/media/hdisk1/data1/gtc/hatp18/GTC2018-09ESO/OB0051'
-
 # Attributes:
 #    stellar.ddir
 #    stellar.science_images_list = []
@@ -19,84 +16,51 @@ ddir = '/media/hdisk1/data1/gtc/hatp18/GTC2018-09ESO/OB0051'
 #    stellar.crossdisp_axis = [ ]
 
 
-def make_marc():
 
-    n_first = 333646
-    n_last = 333648
-    framen = range( n_first, n_last+1 )
-    nframes = len( framen )
-    ddir_bias = os.path.join( ddir, 'arc' )
-    science_frames = []
-    for i in range( nframes ):
-        science_frames += [ '0000{0:.0f}-20130520-OSIRIS-OsirisLongSlitSpectroscopy.fits'.format( framen[i] ) ]
-    science_frames = np.array( science_frames, dtype=str )
-    
-    return None
+def median_combine_frames( list_filepath, ddir_output, median_filename, frame_type=None ):
+    """
+    Median combines the bias frames into a master bias.
+    """
 
-
-def make_mbias():
-
-    n_first = 332777
-    n_last = 332877
-    framen = range( n_first, n_last+1 )
-    nframes = len( framen )
-    ddir_bias = os.path.join( ddir, 'bias' )
-    bias_frames = []
-    for i in range( nframes ):
-        bias_frames += [ '0000{0:.0f}-20130520-OSIRIS-OsirisBias.fits'.format( framen[i] ) ]
-    nframes = len( bias_frames )
+    frames = np.loadtxt( list_filepath, dtype=str )
+    nframes = len( frames )
     nexts = 2
-    mbias_filename = 'mbias.fits'
-    mbias_path = os.path.join( ddir_bias, mbias_filename )
     exptimes = np.zeros( nframes )
-    print '\nReading in bias arrays...'
-    bias_cube1 = []
-    bias_cube2 = []
+    print '\nReading in individual frames...'
+    cube1 = []
+    cube2 = []
     for i in range( nframes ):
-        bias_filepath = os.path.join( ddir_bias, bias_frames[i] )
-        print '{0} of {1}. {2}'.format( i+1, nframes, bias_filepath )
-        hdu = fitsio.FITS( bias_filepath, 'r' )
+        filepath = os.path.join( ddir_output, frames[i] )
+        print '{0} of {1}. {2}'.format( i+1, nframes, filepath )
+        hdu = fitsio.FITS( filepath, 'r' )
         h0 = hdu[0].read_header()
         exptimes[i] = h0['EXPTIME']
-        bias_cube1 += [ hdu[1].read() ] # 1st chip
-        bias_cube2 += [ hdu[2].read() ] # 2nd chip
+        cube1 += [ hdu[1].read() ] # 1st chip
+        cube2 += [ hdu[2].read() ] # 2nd chip
         hdu.close()
     if len( np.unique( exptimes ) )!=1:
         pdb.set_trace() # all exptimes should be the same
     else:
         exptime = exptimes[0]
-    bias_cube1 = np.dstack( bias_cube1 )
-    bias_cube2 = np.dstack( bias_cube2 )
-    mbias1 = np.median( bias_cube1, axis=2 )
-    mbias2 = np.median( bias_cube2, axis=2 )
+    cube1 = np.dstack( cube1 )
+    cube2 = np.dstack( cube2 )
+    median1 = np.median( cube1, axis=2 )
+    median2 = np.median( cube2, axis=2 )
     # TRIM THE EDGES LIKE FOR THE NOT??
-    header = { 'OBJECT':'master_bias', 'EXPTIME':exptime }
-    if os.path.isfile( mbias_path ):
-        os.remove( mbias_path )
-    hdu = fitsio.FITS( mbias_path, 'rw' )
+    header = { 'OBJECT':'master_{0}'.format( frame_type ), 'EXPTIME':exptime }
+    save_filepath = os.path.join( ddir_output, median_filename )
+    if os.path.isfile( save_filepath ):
+        os.remove( save_filepath )
+    hdu = fitsio.FITS( save_filepath, 'rw' )
     hdu.write( None, header=None )
-    hdu.write( mbias1, header=header )
-    hdu.write( mbias2, header=header )
+    hdu.write( median1, header=header )
+    hdu.write( median2, header=header )
     hdu.close()
-    print '\nSaved master bias:\n{0}'.format( mbias_path )
-    pdb.set_trace()
+    print '\nSaved master {0}:\n{1}'.format( frame_type, save_filepath )
     
     return None
 
 
-def make_mflat():
-
-    n_first = 333651
-    n_last = 333751
-    framen = range( n_first, n_last+1 )
-    nframes = len( framen )
-    ddir_bias = os.path.join( ddir, 'bias' )
-    science_frames = []
-    for i in range( nframes ):
-        science_frames += [ '0000{0:.0f}-20130520-OSIRIS-OsirisLongSlitSpectroscopy.fits'.format( framen[i] ) ]
-    science_frames = np.array( science_frames, dtype=str )
-    
-    return None
 
 def prep_stellar_obj():
 
