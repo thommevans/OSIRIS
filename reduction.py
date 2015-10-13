@@ -17,14 +17,13 @@ from spectroscopy_dev.spectroscopy import stellar as stellar_module
 
 
 
-def median_combine_frames( list_filepath, ddir_output, median_filename, frame_type=None ):
+def median_combine_frames( list_filepath, ddir_output, median_filename, frame_type=None, n_exts=2 ):
     """
-    Median combines the bias frames into a master bias.
+    Median combines frames into a master frame.
     """
 
     frames = np.loadtxt( list_filepath, dtype=str )
     nframes = len( frames )
-    nexts = 2
     exptimes = np.zeros( nframes )
     print '\nReading in individual frames...'
     cube1 = []
@@ -39,6 +38,8 @@ def median_combine_frames( list_filepath, ddir_output, median_filename, frame_ty
         cube2 += [ hdu[2].read() ] # 2nd chip
         hdu.close()
     if len( np.unique( exptimes ) )!=1:
+        print 'Different exposure times used:'
+        print np.unique( exptimes )
         pdb.set_trace() # all exptimes should be the same
     else:
         exptime = exptimes[0]
@@ -61,8 +62,118 @@ def median_combine_frames( list_filepath, ddir_output, median_filename, frame_ty
     return None
 
 
+def calibrate_raw_science( raw_ddir='', cal_ddir='', mbias_filepath='', mflat_filepath='', raw_science_list_filepath='', n_exts=2 ):
+    """
+    For each raw science image, this routine trims the array edges and
+    performs dark subtraction, before saving the processed image to file.
+    Flatfielding is optional. The mflat_filename argument controls whether
+    or not flatfielding is done, and if so, which file contains the master
+    flat. Only the windows defined by the cross-dispersion and dispersion
+    bounds will be flatfielded (after removal of the lamp continuum emission).
+    """
+
+    if ( mflat_filepath=='' )+( mflat_filepath==None ):
+        cal_science_list_filename='science_noflatfield.lst'
+        mflat_filepath = None
+    else:
+        cal_science_list_filename='science_flatfielded.lst'
+        
+    mbias_hdu = fitsio.FITS( mbias_filepath, 'r' )
+    mbias1 = mbias_hdu[1].read()
+    mbias2 = mbias_hdu[2].read()
+    mbias_arr = [ mbias1, mbias2 ]
+    ## READ OUT BOTH EXTENSIONS!!
+
+    if mflat_filepath!=None:
+        # Read in the master flatfield:
+        mflat_path = os.path.join( night_dir, mflat_filename )
+        mflat_hdu = fitsio.FITS( mflat_path, 'r' )
+        mflat1_raw = mflat_hdu[1].read()
+        mflat2_raw = mflat_hdu[2].read()
+        #mflat_corr = remove_lamp_spectrum( mflat_raw, night )
+        #mflat_arr = [ mflat1_corr, mflat2_corr ]
+        pdb.set_trace() # todo = remove_lamp_spectrum()
+    else:
+        mflat_arr = None
+    raw_science_filenames = np.loadtxt( raw_science_list_filepath, dtype='str' )
+    nframes = len( raw_science_filenames )
+    list_dir = os.path.dirname( raw_science_list_filepath )
+    cal_science_list_path = os.path.join( list_dir, cal_science_list_filename )
+    cal_science_list_ofile = open( cal_science_list_path, 'w' )
+    for i in range( nframes ):
+
+        # Read the raw image:
+        ifilename = os.path.join( raw_ddir, raw_science_filenames[i] )
+        raw_hdu = fitsio.FITS( ifilename, 'r' )
+
+        # Prepare the HDU for writing:
+        calext = 'c{0}'.format( raw_science_filenames[i] )
+        if mflat_filepath==None:
+            calext = calext.replace( '.', '_noflatfielded.' )
+        else:
+            calext = calext.replace( '.', '_flatfielded.' )
+        ofilepath = os.path.join( cal_ddir, calext )
+        if os.path.isfile( ofilepath ):
+            os.remove( ofilepath )
+        cal_hdu = fitsio.FITS( ofilepath, 'rw' )
+        # Copy the header for ext 0:
+        cal_hdu.write( None, header=raw_hdu[0].read_header() )
+        for j in range( n_exts ):
+
+            raw_arr_j = raw_hdu[j+1].read()
+
+            # Trim edges: # DONT DO THIS FOR GTC?
+            #raw_arr = raw_arr[ VTRIM[0]:-VTRIM[1], HTRIM[0]:-HTRIM[1] ]
+
+            # Bias subtraction:
+            cal_arr_j = raw_arr_j - mbias_arr[j]
+
+            # Flatfield:
+            if mflat_arr!=None:
+                cal_arr_j = cal_arr_j/mflat_arr[j]
+
+            # Write calibrated data for current extension:
+            cal_hdu.write( cal_arr_j, header=raw_hdu[j].read_header() )
+            #cal_hdu[0].write_key( 'XOVERSC', 0, comment='Overscan has been trimmed' )
+            #cal_hdu[0].write_key( 'YOVERSC', 0, comment='Overscan has been trimmed' )
+
+            #if i>20:
+            #    plt.figure()
+            #    plt.imshow( cal_arr_j, interpolation='nearest', aspect='auto' )
+            #    pdb.set_trace()
+        raw_hdu.close()
+        cal_hdu.close()
+        print 'Image {0} of {1}. Saved {2}'.format( i+1, nframes, ofilepath )
+        cal_science_list_ofile.write( '{0}\n'.format( calext ) )
+    cal_science_list_ofile.close()
+
+    mbias_hdu.close()
+    if mflat_filepath!=None:
+        mflat_hdu.close()
+    cal_hdu.close()
+
+    return None
+
+def generate_spectra( nstars=2, crossdisp_bounds=[], disp_bounds=[] ):
+    
+    stellar = prep_stellar_obj()
+
+    # Bounding boxes for the stars in pixel coordinates:
+    stellar.nstars = nstars
+    stellar.crossdisp_bounds = crossdisp_bounds
+    stellar.disp_bounds = disp_bounds
+
+    # Generate the master science subarrays: (???)
+    stellar.identify_badpixels()
+
+    # Spectral trace fitting:
+    
+    
 
 def prep_stellar_obj():
+    """
+    THIS SHOULD BE GENERALISED TO APPLY TO ARBITRARY GTC DATASETS
+    """
 
     arc_ext = 'arc'
     bias_ext = 'bias'
@@ -89,7 +200,7 @@ def prep_stellar_obj():
     stellar.badpix_map = None
     stellar.disp_axis = 0
     stellar.crossdisp_axis = 1
-    stellar.next = 2
+    stellar.n_exts = 2
 
     # SHOULD THESE IMAGES BE CALIBRATED (DARK, FLAT ETC) BEFORE THIS STEP?
     image_filenames = np.loadtxt( stellar.science_images_list, dtype=str )
