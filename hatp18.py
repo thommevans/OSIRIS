@@ -86,9 +86,58 @@ def calibrate_raw_science():
     return None
 
 
-def generate_spectra():
+def prep_stellar_obj():
     #todo + include call to combine_spectra() in reduction.py
+    adir = '/home/tevans/analysis/gtc/hatp18'
+    science_images_full_list_filename = 'cal_science_noflatfield.lst'
+    badpix_maps_full_list_filename = 'badpix_full.lst'
+    science_images_list_filename = 'science_images.lst' # should apply to all stars...
+    badpix_maps_list_filename = 'badpix_maps.lst' # should apply to all stars...
+    science_traces_list_filename = [ [ 'science_traces_hatp18.lst' ], [ 'science_traces_reference.lst' ] ]
+    ddir_science = os.path.join( ddir, 'object' )
+    ddir_arc = os.path.join( ddir, 'arc' )
+    n_exts = 2
+    star_names_chip1 = [ 'hatp18' ]
+    star_names_chip2 = [ 'reference' ]
+    star_names = [ star_names_chip1, star_names_chip2 ]
+    disp_axis = 0
+    crossdisp_axis = 0
+    crossdisp_bounds_chip1 = [ [ 530, 580 ] ]
+    disp_bounds_chip1 = [ [ 600, 2050 ] ]
+    crossdisp_bounds_chip2 = [ [ 280, 330 ] ]
+    disp_bounds_chip2 = [ [ 600, 2050 ] ]
+    crossdisp_bounds = [ crossdisp_bounds_chip1, crossdisp_bounds_chip2 ]
+    disp_bounds = [ disp_bounds_chip1, disp_bounds_chip2 ]
+    stellar = reduction.prep_stellar_obj( adir=adir, \
+                                          science_images_full_list_filename=science_images_full_list_filename, \
+                                          badpix_maps_full_list_filename=badpix_maps_full_list_filename, \
+                                          science_images_list_filename=science_images_list_filename, \
+                                          badpix_maps_list_filename=badpix_maps_list_filename, \
+                                          science_traces_list_filename=science_traces_list_filename, \
+                                          ddir_science=ddir_science, ddir_arc=ddir_arc, n_exts=n_exts, \
+                                          star_names=star_names, \
+                                          disp_axis=disp_axis, crossdisp_axis=crossdisp_axis, \
+                                          crossdisp_bounds=crossdisp_bounds, disp_bounds=disp_bounds )
+    return stellar
 
+
+def identify_bad_pixels():
+    stellar = prep_stellar_obj()
+    stellar.identify_bad_pixels( stellar )
     return None
 
 
+def fit_traces():
+    stellar = prep_stellar_obj()
+    stellar.fit_traces( make_plots=True )
+    return None
+
+def extract_spectra( spectral_ap_radius=15, sky_inner_radius=25, sky_band_width=5 ):
+    stellar = prep_stellar_obj()
+    #stellar.science_traces_lists = [ [ 'science_traces_hatp18.lst' ], [ 'science_traces_reference.lst' ] ]
+    #stellar.science_images_lists = [ [ 'science_images_hatp18.lst' ], [ 'science_images_reference.lst' ] ]
+    stellar.spectral_ap_radius = spectral_ap_radius
+    stellar.sky_inner_radius = sky_inner_radius
+    stellar.sky_band_width = sky_band_width
+    stellar.extract_spectra()
+    return None
