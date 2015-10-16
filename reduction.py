@@ -198,7 +198,7 @@ def fit_traces( stellar ): # THIS IS A REDUNDANT ROUTINE PROBABLY
     return None
     
 
-def prep_stellar_obj( adir='', ddir_science='', ddir_arc='', n_exts=2, star_names=[], science_images_full_list_filename='', badpix_maps_full_list_filename='', science_images_list_filename='', badpix_maps_list_filename='', science_traces_list_filename='', disp_axis=0, crossdisp_axis=1, crossdisp_bounds=[], disp_bounds=[] ):
+def prep_stellar_obj( adir='', ddir_science='', ddir_arc='', n_exts=2, star_names=[], science_images_full_list_filename='', badpix_maps_full_list_filename='', science_images_list_filename='', badpix_maps_list_filename='', science_traces_list_filename='', science_spectra_list_filename='', disp_axis=0, crossdisp_axis=1, crossdisp_bounds=[], disp_bounds=[] ):
     """
     THIS SHOULD BE GENERALISED TO APPLY TO ARBITRARY GTC DATASETS
     """
@@ -228,7 +228,8 @@ def prep_stellar_obj( adir='', ddir_science='', ddir_arc='', n_exts=2, star_name
     stellar.badpix_maps_full_list = badpix_maps_full_list_filename
     stellar.badpix_maps_list = badpix_maps_list_filename
     stellar.science_traces_list = science_traces_list_filename
-    
+    stellar.science_spectra_list = science_spectra_list_filename
+
     # Generate the list of filenames that the bad pixel maps
     # will be saved to:
     science_images_list_filepath = os.path.join( stellar.adir, stellar.science_images_full_list )

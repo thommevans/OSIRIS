@@ -94,6 +94,7 @@ def prep_stellar_obj():
     science_images_list_filename = 'science_images.lst' # should apply to all stars...
     badpix_maps_list_filename = 'badpix_maps.lst' # should apply to all stars...
     science_traces_list_filename = [ [ 'science_traces_hatp18.lst' ], [ 'science_traces_reference.lst' ] ]
+    science_spectra_list_filename = [ [ 'science_spectra_hatp18.lst' ], [ 'science_spectra_reference.lst' ] ]
     ddir_science = os.path.join( ddir, 'object' )
     ddir_arc = os.path.join( ddir, 'arc' )
     n_exts = 2
@@ -102,9 +103,9 @@ def prep_stellar_obj():
     star_names = [ star_names_chip1, star_names_chip2 ]
     disp_axis = 0
     crossdisp_axis = 0
-    crossdisp_bounds_chip1 = [ [ 530, 580 ] ]
+    crossdisp_bounds_chip1 = [ [ 300, 900 ] ]
     disp_bounds_chip1 = [ [ 600, 2050 ] ]
-    crossdisp_bounds_chip2 = [ [ 280, 330 ] ]
+    crossdisp_bounds_chip2 = [ [ 200, 400 ] ]
     disp_bounds_chip2 = [ [ 600, 2050 ] ]
     crossdisp_bounds = [ crossdisp_bounds_chip1, crossdisp_bounds_chip2 ]
     disp_bounds = [ disp_bounds_chip1, disp_bounds_chip2 ]
@@ -114,6 +115,7 @@ def prep_stellar_obj():
                                           science_images_list_filename=science_images_list_filename, \
                                           badpix_maps_list_filename=badpix_maps_list_filename, \
                                           science_traces_list_filename=science_traces_list_filename, \
+                                          science_spectra_list_filename=science_spectra_list_filename, \
                                           ddir_science=ddir_science, ddir_arc=ddir_arc, n_exts=n_exts, \
                                           star_names=star_names, \
                                           disp_axis=disp_axis, crossdisp_axis=crossdisp_axis, \
@@ -121,9 +123,15 @@ def prep_stellar_obj():
     return stellar
 
 
+def run_all():
+    #identify_bad_pixels()
+    fit_traces()
+    extract_spectra()
+    return None
+
 def identify_bad_pixels():
     stellar = prep_stellar_obj()
-    stellar.identify_bad_pixels( stellar )
+    stellar.identify_bad_pixels()
     return None
 
 
