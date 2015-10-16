@@ -126,7 +126,7 @@ def prep_stellar_obj():
 def run_all():
     #identify_bad_pixels()
     fit_traces()
-    extract_spectra()
+    extract_spectra( spectral_ap_radius=15, sky_inner_radius=25, sky_band_width=5 )
     return None
 
 def identify_bad_pixels():
