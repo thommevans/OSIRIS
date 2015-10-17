@@ -27,7 +27,8 @@ def median_combine_frames( list_filepath, ddir_output, median_filename, frame_ty
     exptimes = np.zeros( nframes )
     print '\nReading in individual frames...'
     cube1 = []
-    cube2 = []
+    if n_exts==2:
+        cube2 = []
     for i in range( nframes ):
         filepath = os.path.join( ddir_output, frames[i] )
         print '{0} of {1}. {2}'.format( i+1, nframes, filepath )
@@ -35,7 +36,8 @@ def median_combine_frames( list_filepath, ddir_output, median_filename, frame_ty
         h0 = hdu[0].read_header()
         exptimes[i] = h0['EXPTIME']
         cube1 += [ hdu[1].read() ] # 1st chip
-        cube2 += [ hdu[2].read() ] # 2nd chip
+        if n_exts==2:
+            cube2 += [ hdu[2].read() ] # 2nd chip
         hdu.close()
     if len( np.unique( exptimes ) )!=1:
         print 'Different exposure times used:'
@@ -44,9 +46,10 @@ def median_combine_frames( list_filepath, ddir_output, median_filename, frame_ty
     else:
         exptime = exptimes[0]
     cube1 = np.dstack( cube1 )
-    cube2 = np.dstack( cube2 )
-    median1 = np.median( cube1, axis=2 )
-    median2 = np.median( cube2, axis=2 )
+    median1 = np.median( cube1, axis=2 )    
+    if n_exts==2:
+        cube2 = np.dstack( cube2 )
+        median2 = np.median( cube2, axis=2 )
     # TRIM THE EDGES LIKE FOR THE NOT??
     header = { 'OBJECT':'master_{0}'.format( frame_type ), 'EXPTIME':exptime }
     save_filepath = os.path.join( ddir_output, median_filename )
@@ -55,14 +58,15 @@ def median_combine_frames( list_filepath, ddir_output, median_filename, frame_ty
     hdu = fitsio.FITS( save_filepath, 'rw' )
     hdu.write( None, header=None )
     hdu.write( median1, header=header )
-    hdu.write( median2, header=header )
+    if n_exts==2:
+        hdu.write( median2, header=header )
     hdu.close()
     print '\nSaved master {0}:\n{1}'.format( frame_type, save_filepath )
     
     return None
 
 
-def calibrate_raw_science( raw_ddir='', cal_ddir='', mbias_filepath='', mflat_filepath='', raw_science_list_filepath='', n_exts=2 ):
+def calibrate_raw_science( n_exts=1, raw_ddir='', cal_ddir='', mbias_filepath='', mflat_filepath='', raw_science_list_filepath='' ):
     """
     For each raw science image, this routine trims the array edges and
     performs dark subtraction, before saving the processed image to file.
@@ -80,9 +84,13 @@ def calibrate_raw_science( raw_ddir='', cal_ddir='', mbias_filepath='', mflat_fi
         
     mbias_hdu = fitsio.FITS( mbias_filepath, 'r' )
     mbias1 = mbias_hdu[1].read()
-    mbias2 = mbias_hdu[2].read()
-    mbias_arr = [ mbias1, mbias2 ]
-    ## READ OUT BOTH EXTENSIONS!!
+    if n_exts==1:
+        mbias_arr = [ mbias1 ]
+    elif n_exts==2:
+        mbias2 = mbias_hdu[2].read()
+        mbias_arr = [ mbias1, mbias2 ]
+    else:
+        pdb.set_trace()
 
     if mflat_filepath!=None:
         # Read in the master flatfield:
