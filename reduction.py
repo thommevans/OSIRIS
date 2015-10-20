@@ -77,10 +77,10 @@ def calibrate_raw_science( n_exts=1, raw_ddir='', cal_ddir='', mbias_filepath=''
     """
 
     if ( mflat_filepath=='' )+( mflat_filepath==None ):
-        cal_science_list_filename='cal_science_noflatfield.lst'
+        cal_science_list_filename = 'cal_science_noflatfield.lst'
         mflat_filepath = None
     else:
-        cal_science_list_filename='cal_science_flatfielded.lst'
+        cal_science_list_filename = 'cal_science_flatfielded.lst'
         
     mbias_hdu = fitsio.FITS( mbias_filepath, 'r' )
     mbias1 = mbias_hdu[1].read()
@@ -97,9 +97,12 @@ def calibrate_raw_science( n_exts=1, raw_ddir='', cal_ddir='', mbias_filepath=''
         mflat_path = os.path.join( night_dir, mflat_filename )
         mflat_hdu = fitsio.FITS( mflat_path, 'r' )
         mflat1_raw = mflat_hdu[1].read()
-        mflat2_raw = mflat_hdu[2].read()
+        if n_exts==1:
+            mflat_arr = [ mflat1_raw ]
+        elif n_exts==2:
+            mflat2_raw = mflat_hdu[2].read()
+            mflat_arr = [ mflat1_raw, mflat2_raw ]
         #mflat_corr = remove_lamp_spectrum( mflat_raw, night )
-        #mflat_arr = [ mflat1_corr, mflat2_corr ]
         pdb.set_trace() # todo = remove_lamp_spectrum()
     else:
         mflat_arr = None

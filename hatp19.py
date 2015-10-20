@@ -88,7 +88,7 @@ def calibrate_raw_science():
     return None
 
 
-def prep_stellar_obj():
+def prep_stellar_obj( flatfield=False ):
     #todo + include call to combine_spectra() in reduction.py
     adir = '/home/tevans/analysis/gtc/hatp19'
     science_images_full_list_filename = 'cal_science_noflatfield.lst'
@@ -101,7 +101,7 @@ def prep_stellar_obj():
     ddir_arc = os.path.join( ddir, 'arc' )
     star_names = [ 'reference',  'hatp19' ]
     disp_axis = 0
-    crossdisp_axis = 0
+    crossdisp_axis = 1
     crossdisp_bounds = [ [ 150, 350 ], [ 510, 710 ] ]
     disp_bounds = [ [ 400, 2050 ], [ 400, 2050 ] ]
     stellar = reduction.prep_stellar_obj( adir=adir, \

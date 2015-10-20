@@ -106,7 +106,7 @@ def prep_stellar_obj():
     star_names_chip2 = [ 'reference' ]
     star_names = [ star_names_chip1, star_names_chip2 ]
     disp_axis = 0
-    crossdisp_axis = 0
+    crossdisp_axis = 1
     crossdisp_bounds_chip1 = [ [ 300, 900 ] ]
     disp_bounds_chip1 = [ [ 600, 2050 ] ]
     crossdisp_bounds_chip2 = [ [ 200, 400 ] ]
