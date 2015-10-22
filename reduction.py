@@ -3,6 +3,8 @@ import pdb, sys, os
 import numpy as np
 import matplotlib.pyplot as plt
 from spectroscopy_dev.spectroscopy import stellar as stellar_module
+import scipy.interpolate
+import scipy.ndimage
 
 # Attributes:
 #    stellar.ddir
@@ -291,3 +293,101 @@ def prep_stellar_obj( adir='', ddir_science='', ddir_arc='', n_exts=2, star_name
     stellar.header_kws['gain'] = 'GAIN'    
 
     return stellar
+
+
+def crosscor( spectra, ref_spectrum, max_shift=1, resample_factor=10, disp_bound_ixs=[], smoothing_sig=None ):
+    # Max shift has to be an integer number of pixels:
+    max_shift = int( np.round( max_shift ) )
+    if smoothing_sig!=None:
+        ref_spectrum_smooth = scipy.ndimage.filters.gaussian_filter1d( ref_spectrum, smoothing_sig )
+    else:
+        ref_spectrum_smooth = ref_spectrum
+    ix0 = disp_bound_ixs[0]
+    ix1 = disp_bound_ixs[1]
+    nframes, ndisp = np.shape( spectra )
+    x = np.arange( ndisp )
+    dshift = 1./resample_factor
+    nshifts = 0
+    while nshifts*dshift<max_shift:
+        nshifts += 1
+    max_shift = int( nshifts*dshift )
+    dshifts = np.r_[ -max_shift : max_shift+dshift : dshift ]
+    nshifts = len( dshifts )
+    npad = max_shift# + 1
+    xi = np.arange( -npad, ndisp+npad )
+    spectra_padded = np.zeros( [ nframes, npad+ndisp+npad ] )
+    spectra_padded[:,npad:npad+ndisp] = spectra
+    pad = np.zeros( npad )
+    ref_spectrumi = np.concatenate( [ pad, ref_spectrum_smooth, pad ] )
+    print '\nInterpolating reference spectrum onto super-sampled grid...'
+    interpolation = 'linear'
+    interpf = scipy.interpolate.interp1d( xi, ref_spectrumi, kind=interpolation )
+    print 'Done.'
+    shifted = np.zeros( [ nshifts, ndisp ] )
+    for j in range( nshifts ):
+        shifted[j,:] = interpf( x+dshifts[j] )
+    # Now loop over the individual spectra and determine which of the 
+    # shifted reference spectra gives the best match:
+    wavshifts = np.zeros( nframes )
+    vstretches = np.zeros( nframes )
+    dspec = np.zeros( [ nframes, ndisp ] )
+    spectra_shifted = np.zeros( [ nframes, ndisp ] )
+    A = np.ones( [ ndisp, 2 ] )
+    print '\nDetermining wavelength shifts:'
+    for i in range( nframes ):
+        rms_i = np.zeros( nshifts )
+        diffs = np.zeros( [ nshifts, ndisp ] )
+        vstretches_i = np.zeros( nshifts )
+        if smoothing_sig!=None:
+            spectrum_smooth_i = scipy.ndimage.filters.gaussian_filter1d( spectra[i,:], smoothing_sig )
+        else:
+            spectrum_smooth_i = spectra[i,:]
+        fits = []
+        for j in range( nshifts ):
+            A[:,1] = shifted[j,:]
+            b = np.reshape( spectrum_smooth_i, [ ndisp, 1 ] )
+            res = np.linalg.lstsq( A, b )
+            c = res[0].flatten()
+            fit = np.dot( A, c )
+            vstretches_i[j] = c[1]
+            diffs[j,:] = spectrum_smooth_i - fit
+            rms_i[j] = np.sqrt( np.mean( diffs[j,:][ix0:ix1+1]**2. ) )
+            fits += [ fit ]
+        ix = np.argmin( rms_i )
+        dspec[i,:] = diffs[ix,:]/ref_spectrum_smooth
+        wavshifts[i] = dshifts[ix]
+        vstretches[i] = vstretches_i[ix]
+        interpf_i = scipy.interpolate.interp1d( xi, spectra_padded[i,:], kind=interpolation )
+        spectra_shifted[i,:] = interpf_i( x-dshifts[ix] )
+        print '... frame {0} of {1} --> {2:.3f} pix'.format( i+1, nframes, dshifts[ix] )
+        if 0*np.abs(dshifts[ix])>0.2:
+            plt.figure()
+            A[:,1] = shifted[ix,:]
+            c = np.linalg.lstsq( A, b )[0].flatten()
+            fitbest = np.dot( A, c )
+            plt.plot( spectrum_smooth_i, '-k', label='target to fit' )
+            plt.plot( fitbest, '-r', label='should be good' )
+            plt.plot( fits[ix], '--c' )
+            A[:,1] = ref_spectrum_smooth 
+            c = np.linalg.lstsq( A[ix0:ix1+1,:], b[ix0:ix1+1,:] )[0].flatten()
+            fitnothing = np.dot( A, c )
+            plt.plot( fitnothing, '-m', label='should be worse' )
+            #plt.plot( ref_spectrum_smooth, '-g' )
+            plt.legend()
+            plt.axvline(ix0)
+            plt.axvline(ix1)
+            pdb.set_trace()
+                  
+        #z_spectrum_smooth = spectrum_smooth_i # this one, should align with this one:
+        #z_ref_spectrum_shifted_smooth = scipy.ndimage.filters.gaussian_filter1d( spectra[i,:], smoothing_sig )
+        # but this one should be offset:
+        #z_ref_spectrum_smooth = ref_spectrum_smooth
+        #plt.plot( z_spectrum_smooth/vstretches[i], '-k' )
+        #plt.plot( z_ref_spectrum_shifted_smooth, '--r' )
+        ##plt.plot( spectra_shifted[i,:], '-g' )
+        #plt.plot( z_ref_spectrum_smooth, '-g' )
+        #pdb.set_trace()
+    return wavshifts, spectra_shifted, dspec
+    
+    
+    

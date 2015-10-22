@@ -3,6 +3,8 @@ import pdb, sys, os
 import reduction
 import fitsio
 import matplotlib.pyplot as plt
+import cPickle
+import utils
 
 
 # Number of FITS extensions for the images in this dataste:
@@ -103,7 +105,15 @@ def prep_stellar_obj( flatfield=False ):
     disp_axis = 0
     crossdisp_axis = 1
     crossdisp_bounds = [ [ 150, 350 ], [ 510, 710 ] ]
-    disp_bounds = [ [ 400, 2050 ], [ 400, 2050 ] ]
+    disp_bounds = [ [ 600, 2050 ], [ 600, 2050 ] ]
+    marc_filename = 'marc.fits'
+    star0_wavcal_crossdisp_bounds = [] #todo
+    star1_wavcal_crossdisp_bounds = [] #todo
+    star0_wavcal_disp_bounds = [] #todo
+    star1_wavcal_disp_bounds = [] #todo
+    wavcal_crossdisp_bounds = [ star0_wavcal_crossdisp_bounds, star1_wavcal_crossdisp_bounds ]
+    wavcal_disp_bounds = [ star0_wavcal_disp_bounds, star1_wavcal_disp_bounds ]
+    wavcal_fiducial_lines = [] #todo
     stellar = reduction.prep_stellar_obj( adir=adir, \
                                           science_images_full_list_filename=science_images_full_list_filename, \
                                           badpix_maps_full_list_filename=badpix_maps_full_list_filename, \
@@ -114,7 +124,8 @@ def prep_stellar_obj( flatfield=False ):
                                           ddir_science=ddir_science, ddir_arc=ddir_arc, n_exts=N_EXTS, \
                                           star_names=star_names, \
                                           disp_axis=disp_axis, crossdisp_axis=crossdisp_axis, \
-                                          crossdisp_bounds=crossdisp_bounds, disp_bounds=disp_bounds )
+                                          crossdisp_bounds=crossdisp_bounds, disp_bounds=disp_bounds  )
+
     return stellar
 
 
@@ -123,6 +134,22 @@ def run_all():
     fit_traces()
     extract_spectra( spectral_ap_radius=15, sky_inner_radius=25, sky_band_width=5 )
     return None
+
+
+def run_extraction_grid():
+    spectral_ap_radii = [ 20, 30, 40, 50 ]
+    sky_inner_radii_ext = [ 0, 15, 30 ]
+    bw = 30
+    n = len( spectral_ap_radii )
+    m = len( sky_inner_radii_ext )
+    for i in range( n ):
+        print '\n\n{0}\nRunning apradius {1} of {2}:\n'.format( 50*'#', i+1, n )
+        r = spectral_ap_radii[i]
+        for j in range( m ):
+            s = r + sky_inner_radii_ext[j]
+            extract_spectra( spectral_ap_radius=r, sky_inner_radius=s, sky_band_width=bw )
+    return None
+
 
 def identify_bad_pixels():
     stellar = prep_stellar_obj()
@@ -136,10 +163,122 @@ def fit_traces():
 
 def extract_spectra( spectral_ap_radius=30, sky_inner_radius=45, sky_band_width=5 ):
     stellar = prep_stellar_obj()
+    image_filenames = np.loadtxt( os.path.join( stellar.adir, stellar.science_images_list ), dtype=str )
+    stellar.spectra_filenames = make_spectra_filenames( image_filenames, spectral_ap_radius=spectral_ap_radius, \
+                                                        sky_inner_radius=sky_inner_radius )
     stellar.spectral_ap_radius = spectral_ap_radius
     stellar.sky_inner_radius = sky_inner_radius
     stellar.sky_band_width = sky_band_width
     stellar.extract_spectra()
+    return None
+
+def make_spectra_filenames( image_filenames, spectral_ap_radius=30, sky_inner_radius=45, shifted=False ):
+    spectra_filenames = []
+    nimages = len( image_filenames )
+    for i in range( nimages ):
+        f = image_filenames[i].replace( '-OSIRIS-OsirisLongSlitSpectroscopy', '' )
+        ext = '_ap{0:.2f}bg{1:.2f}'.format( spectral_ap_radius, sky_inner_radius )
+        spectra_filenames += [ f.replace( '.fits', '{0}.fits'.format( ext ) ) ]
+        print spectra_filenames[-1]
+    if shifted==True:
+        spectra_filenames = create_shifted_spectra_filenames( spectra_filenames )
+    return spectra_filenames
+
+def make_shifted_spectra_filenames( spectra_filenames ):
+    n = len( spectra_filenames )
+    new_filenames = []
+    for i in range( n ):
+        new_filenames += [ spectra_filenames[i].replace( '.fits', '_wavshifted.fits' ) ]
+    return new_filenames
+    
+
+def crosscor_spectra( spectral_ap_radius=30, sky_inner_radius=45, smoothing_sig=20 ):
+
+    stellar = prep_stellar_obj()
+    image_filenames = np.loadtxt( os.path.join( stellar.adir, stellar.science_images_list ), dtype=str )
+    stellar.spectra_filenames = make_spectra_filenames( image_filenames, spectral_ap_radius=spectral_ap_radius, \
+                                                        sky_inner_radius=sky_inner_radius, shifted=False )
+    nframes = len( stellar.spectra_filenames )
+    max_shift_pix = 2
+    resample_factor = 1000
+    
+    star_names = [ 'hatp19', 'reference' ]
+    disp_bound_ixs = [ 400, 1405 ]
+    m = len( star_names )
+    dwavs = []
+    ref_spectrum = []
+    spectra = []
+    spectra_shifted = []
+    dspec = []
+    #plt.figure()
+    for k in range( m ):
+        print 'Star {0} of {1}'.format( k+1, m )
+        spec_dir = os.path.join( stellar.adir, 'spectra/{0}'.format( star_names[k] ) )
+        spectra_k = []
+        for i in range( nframes ):
+            print i+1, nframes
+            ipath = os.path.join( spec_dir, stellar.spectra_filenames[i] )
+            hdu = fitsio.FITS( ipath )
+            spectra_k += [ hdu[1].read_column( 'apflux' ) ]
+            hdu.close()
+        spectra_k = np.row_stack( spectra_k )
+        ref_spectrum_k = np.median( spectra_k[:12,:], axis=0 )
+        dwavs_k, spectra_shifted_k, dspec_k = reduction.crosscor( spectra_k, ref_spectrum_k, \
+                                                                  max_shift=max_shift_pix, \
+                                                                  smoothing_sig=smoothing_sig, \
+                                                                  disp_bound_ixs=disp_bound_ixs, \
+                                                                  resample_factor=resample_factor )
+        dwavs += [ dwavs_k ]
+        ref_spectrum +=  [ ref_spectrum_k ]
+        spectra += [ spectra_k ]        
+        spectra_shifted += [ spectra_shifted_k ]
+        dspec += [ dspec_k ]
+        
+    shifted_spectra_filenames = make_shifted_spectra_filenames( stellar.spectra_filenames )
+
+    plt.figure()
+    plt.subplot( 211 )
+    plt.plot( spectra[0][50,:], '-k' )
+    plt.plot( spectra[0][120,:], '-c' )
+    ax = plt.gca()
+    plt.subplot( 212, sharex=ax, sharey=ax )
+    plt.plot( spectra_shifted[0][50,:], '-g' )
+    plt.plot( spectra_shifted[0][120,:], '-r' )
+
+    plt.figure()
+    plt.subplot( 211 )
+    plt.plot( spectra[1][50,:], '-m' )
+    plt.plot( spectra[1][120,:], '-k' )
+    ax = plt.gca()
+    plt.subplot( 212, sharex=ax, sharey=ax )
+    plt.plot( spectra_shifted[1][50,:], '-c' )
+    plt.plot( spectra_shifted[1][120,:], '-b' )
+
+    
+    ix0 = disp_bound_ixs[0]
+    ix1 = disp_bound_ixs[1]
+    n1 = 100
+    n2 = 250
+    for g in range(2):
+        r0 = spectra[g][n1,:]-spectra[g][n2,:]
+        rms0 = np.sqrt( np.mean( r0[ix0:ix1+1]**2. ) )
+        r1 = spectra_shifted[g][n1,:]-spectra_shifted[g][n2,:]
+        rms1 = np.sqrt( np.mean( r1[ix0:ix1+1]**2. ) )
+        print '\nthis ', rms1
+        print 'should be lower than this ', rms0
+    plt.figure()
+    plt.subplot(211)
+    w = np.sum( spectra_shifted, axis=1 )
+    w /= w[0]
+    plt.plot( w, '-k' )
+    plt.subplot(212,sharex=ax)
+    plt.plot( dwavs[0] )
+    plt.plot( dwavs[1] )
+
+    
+    
+    pdb.set_trace()
+        
     return None
 
 def combine_spectra():
@@ -158,7 +297,8 @@ def combine_spectra():
     ref_spectra_list = np.loadtxt( ref_spectra_list_filepath, dtype=str )    
     if len( ref_spectra_list )!=nimages:
         pdb.set_trace()
-    mjds = []
+    mjd = []
+    airmass = []
     hatp19_spectra = []
     hatp19_disp_pixs = []
     hatp19_skyppix = []
@@ -174,7 +314,8 @@ def combine_spectra():
         image_filepath = os.path.join( stellar.ddir, image_list[i] )
         hdu = fitsio.FITS( image_filepath )
         h0 = hdu[0].read_header()
-        mjds += [ h0['MJD-OBS'] ]
+        mjd += [ h0['MJD-OBS'] ]
+        airmass += [ h0['AIRMASS'] ]
         hatp19_spectrum_filepath = os.path.join( stellar.adir, hatp19_spectra_list[i] )
         hatp19_spectrum = fitsio.FITS( hatp19_spectrum_filepath )
         hatp19_spectra += [ hatp19_spectrum[1].read_column( 'apflux' ) ]
@@ -197,17 +338,18 @@ def combine_spectra():
         #plt.plot(ref_spectra[-1],'-r')
         #pdb.set_trace()
         #print 'bbb'
-    mjds = np.array( mjds )
-    jds = mjds + 2400000.5
-    tmins = ( jds-jds.min() )*24.*60.
+    mjd = np.array( mjd )
+    airmass = np.array( airmass )
+    jd = mjd + 2400000.5
+    tmins = ( jd-jd.min() )*24.*60.
     hatp19_spectra = np.row_stack( hatp19_spectra )
-    hatp19_disp_pixs = np.row_stack( hatp19_disp_pixs )
+    hatp19_disp_pixs = np.row_stack( hatp19_disp_pixs )[0,:]
     hatp19_skyppix = np.row_stack( hatp19_skyppix )
     hatp19_nappixs = np.row_stack( hatp19_nappixs )
     hatp19_fwhm = np.array( hatp19_fwhm )
     
     ref_spectra = np.row_stack( ref_spectra )
-    ref_disp_pixs = np.row_stack( ref_disp_pixs )
+    ref_disp_pixs = np.row_stack( ref_disp_pixs )[0,:]
     ref_skyppix = np.row_stack( ref_skyppix )
     ref_nappixs = np.row_stack( ref_nappixs )
     ref_fwhm = np.array( ref_fwhm )
@@ -229,8 +371,202 @@ def combine_spectra():
     plt.title('HAT-P-19')
     plt.ylabel('Relative Flux')
     plt.xlabel('Time (minutes)')
+
+    hatp19 = { 'spectra':hatp19_spectra, 'disp_pixs':hatp19_disp_pixs, 'skyppix':hatp19_skyppix, 'nappixs':hatp19_nappixs, 'fwhm':hatp19_fwhm  }
+    ref = { 'spectra':ref_spectra, 'disp_pixs':ref_disp_pixs, 'skyppix':ref_skyppix, 'nappixs':ref_nappixs, 'fwhm':ref_fwhm  }
+    output = { 'jd':jd, 'airmass':airmass, 'hatp19':hatp19, 'ref':ref }
+
+    opath = '/home/tevans/analysis/gtc/hatp19/temp_spectra.pkl'
+    ofile = open( opath, 'w' )
+    cPickle.dump( output, ofile )
+    ofile.close()
+    print '\nSaved: {0}'.format( opath )
+
+    return None
+
+def quick_test():
+
+    ifile = open( '/home/tevans/analysis/gtc/hatp19/temp_spectra.pkl' )
+    z = cPickle.load( ifile )
+    ifile.close()
+    jd = z['jd']
+    airmass = z['airmass']
+    x2 = z['hatp19']['disp_pixs']
+    fwhm2 = z['hatp19']['fwhm']
+    sky2 = np.sum( z['hatp19']['skyppix'], axis=1 )
+    x1 = z['ref']['disp_pixs']
+    fwhm1 = z['ref']['fwhm']
+    sky1 = np.sum( z['ref']['skyppix'], axis=1 )
+    s2 = z['hatp19']['spectra']
+    s1 = z['ref']['spectra']
+
+    ix = 400
+
+    w1 = np.sum( s1[:,ix:], axis=1 )
+    w2 = np.sum( s2[:,ix:], axis=1 )
+    wa = w2/w1
+
+    wb = np.sum( s2[:,ix:]/s1[:,ix:], axis=1 )
+    
+    wa /= wa[0]
+    wb /= wb[0]
+
+    plt.figure()
+    plt.plot( jd, wa, '.r' )
+    plt.plot( jd, wb, '.b' )
+
+
+    n = len( jd )
+    offset = np.ones( n )
+
+    dxs = []
+
+    dpix = 15
+    ix = 600
+    chB1 = np.sum( s1[:,ix:ix+dpix+1], axis=1 )
+    chB2 = np.sum( s2[:,ix:ix+dpix+1], axis=1 )
+    dxs += [ [ ix, ix+dpix ] ]
+    chB = chB2/chB1
+    chB /= chB[0]
+    chBdiff = chB/wa
+    phi = np.column_stack( [ offset, jd ] )
+    c = np.linalg.lstsq( phi, chBdiff )[0]
+    ttrend = np.dot( phi, c )
+    chBdiff /= ttrend
+    med = np.median( chBdiff )
+    chBdiff -= med
+    chBdiff *= 1e6
+    sig = np.std( chBdiff )
+    nsig = np.abs( chBdiff/sig )
+    ixsB = nsig<4
+
+    ix = 1115
+    chV1 = np.sum( s1[:,ix:ix+dpix+1], axis=1 )
+    chV2 = np.sum( s2[:,ix:ix+dpix+1], axis=1 )
+    dxs += [ [ ix, ix+dpix ] ]
+    chV = chV2/chV1
+    chV /= chV[0]
+    chVdiff = chV/wa
+    phi = np.column_stack( [ offset, jd ] )
+    c = np.linalg.lstsq( phi, chVdiff )[0]
+    ttrend = np.dot( phi, c )
+    chVdiff /= ttrend
+    med = np.median( chVdiff )
+    chVdiff -= med
+    chVdiff *= 1e6
+    sig = np.std( chVdiff )
+    nsig = np.abs( chVdiff/sig )
+    ixsV = nsig<4
+
+    ix = 1445
+    chR1 = np.sum( s1[:,ix:ix+dpix+1], axis=1 )
+    chR2 = np.sum( s2[:,ix:ix+dpix+1], axis=1 )
+    dxs += [ [ ix, ix+dpix ] ]
+    chR = chR2/chR1
+    chR /= chR[0]
+    chRdiff = chR/wa
+    chRdiff /= chRdiff[0]
+    phi = np.column_stack( [ offset, jd ] )
+    c = np.linalg.lstsq( phi, chRdiff )[0]
+    ttrend = np.dot( phi, c )
+    chRdiff /= ttrend
+    med = np.median( chRdiff )
+    chRdiff -= med
+    chRdiff *= 1e6
+    sig = np.std( chRdiff )
+    nsig = np.abs( chRdiff/sig )
+    ixsR = nsig<4
+    
+    plt.figure()
+    plt.plot(s2[0,:],'-b')
+    plt.plot(s1[0,:],'-r')
+    for i in range( 3 ):
+        print dxs[i]
+        plt.axvspan( dxs[i][0], dxs[i][1], color=0.6*np.ones(3), alpha=0.5 )
+    plt.xlabel( 'Dispersion axis (pixel)' )
+    plt.ylabel( 'Flux' )
+    plt.title( 'HAT-P-19' )
+
+    plt.figure()
+    plt.subplot( 411 )
+    ax = plt.gca()
+    plt.plot( jd, wa, '-b' )
+    plt.plot( jd, wb, '-r' )
+    plt.ylabel( 'white' )
+    plt.subplot( 412, sharex=ax )
+    plt.plot( jd, chB, '-g' )
+    plt.ylabel( 'B' )
+    plt.subplot( 413, sharex=ax )
+    plt.plot( jd, chV, '-g' )
+    plt.ylabel( 'V' )
+    plt.subplot( 414, sharex=ax )
+    plt.plot( jd, chR, '-g' )
+    plt.ylabel( 'R' )
+    plt.xlabel( 'JD' )
+    plt.suptitle( 'HAT-P-19' )
+
+    nbins = int( np.round( n/25. ) )
+    t = ( jd-jd.min() )*24*60
+
+    plt.figure()
+
+    ylow = -10000
+    yupp = 10000
+
+    plt.subplot( 611 )
+    ax = plt.gca()
+    stdB_1 = np.std( chBdiff[ixsB] )
+    plt.plot( t[ixsB], chBdiff[ixsB], '-g', label='std_1={0:.0f}ppm'.format( stdB_1 ) )
+    ax0 = plt.gca()
+    tb, yb, stdvs, npb = utils.bin_1d( t[ixsB], chBdiff[ixsB], nbins=nbins )
+    stdB_25 = np.std( yb[npb>20] )
+    plt.plot( tb[npb>20], yb[npb>20], '-or', label='std_25={0:.0f}ppm'.format( stdB_25 ) )
+    plt.legend( numpoints=1 )
+    plt.ylabel( 'B resids' )
+    plt.ylim( [ ylow, yupp ] )
+
+    plt.subplot( 612, sharex=ax )
+    stdV_1 = np.std( chVdiff[ixsV] )
+    plt.plot( t[ixsV], chVdiff[ixsV], '-g', label='std_1={0:.0f}ppm'.format( stdV_1 ) )
+    ax0 = plt.gca()
+    tb, yb, stdvs, npb = utils.bin_1d( t[ixsV], chVdiff[ixsV], nbins=nbins )
+    stdV_25 = np.std( yb[npb>20] )
+    plt.plot( tb[npb>20], yb[npb>20], '-or', label='std_25={0:.0f}ppm'.format( stdV_25 ) )
+    plt.legend( numpoints=1 )
+    plt.ylabel( 'V resids' )
+    plt.ylim( [ ylow, yupp ] )
+
+    plt.subplot( 613, sharex=ax )
+    stdR_1 = np.std( chRdiff[ixsR] )
+    plt.plot( t[ixsR], chRdiff[ixsR], '-g', label='std_1={0:.0f}ppm'.format( stdR_1 ) )
+    ax0 = plt.gca()
+    tb, yb, stdvs, npb = utils.bin_1d( t[ixsR], chRdiff[ixsR], nbins=nbins )
+    stdR_25 = np.std( yb[npb>20] )
+    plt.plot( tb[npb>20], yb[npb>20], '-or', label='std_25={0:.0f}ppm'.format( stdR_25 ) )
+    plt.legend( numpoints=1 )
+    plt.ylabel( 'R resids' )
+    plt.ylim( [ ylow, yupp ] )
+
+    plt.subplot( 614, sharex=ax )
+    plt.plot( t, fwhm1, '-r' )
+    plt.plot( t, fwhm2, '-b' )
+    plt.ylabel( 'FWHM' )
+    plt.subplot( 615, sharex=ax )
+    plt.plot( t, sky1/np.median( sky1 ), '-r' )
+    plt.plot( t, sky2/np.median( sky1 ), '-b' )
+    plt.ylabel( 'Sky' )
+    plt.subplot( 616, sharex=ax )
+    plt.plot( t, airmass, '-g' )
+    plt.ylabel( 'Airm' )
+    plt.xlabel( 'time (minutes)' )
+    
+    plt.suptitle( 'HAT-P-19' )
+    ax.set_xlim( [ 0, 370 ] )
+
     pdb.set_trace()
     return None
-    
+
+
+
     
     

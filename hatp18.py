@@ -3,6 +3,8 @@ import pdb, sys, os
 import reduction
 import fitsio
 import matplotlib.pyplot as plt
+import cPickle
+import utils
 
 # Number of FITS extensions for the images in this dataste:
 N_EXTS = 1
@@ -170,7 +172,8 @@ def combine_spectra():
     ref_spectra_list = np.loadtxt( ref_spectra_list_filepath, dtype=str )    
     if len( ref_spectra_list )!=nimages:
         pdb.set_trace()
-    mjds = []
+    mjd = []
+    airmass = []
     hatp18_spectra = []
     hatp18_disp_pixs = []
     hatp18_skyppix = []
@@ -186,7 +189,8 @@ def combine_spectra():
         image_filepath = os.path.join( stellar.ddir, image_list[i] )
         hdu = fitsio.FITS( image_filepath )
         h0 = hdu[0].read_header()
-        mjds += [ h0['MJD-OBS'] ]
+        mjd += [ h0['MJD-OBS'] ]
+        airmass += [ h0['AIRMASS'] ]
         hatp18_spectrum_filepath = os.path.join( stellar.adir, hatp18_spectra_list[i] )
         hatp18_spectrum = fitsio.FITS( hatp18_spectrum_filepath )
         hatp18_spectra += [ hatp18_spectrum[1].read_column( 'apflux' ) ]
@@ -203,9 +207,10 @@ def combine_spectra():
         ref_nappixs += [ ref_spectrum[1].read_column( 'nappixs' ) ]
         ref_fwhm += [ ref_spectrum[1].read_header()['FWHM'] ]
         ref_spectrum.close()
-    mjds = np.array( mjds )
-    jds = mjds + 2400000.5
-    tmins = ( jds-jds.min() )*24.*60.
+    mjd = np.array( mjd )
+    airmass = np.array( airmass )
+    jd = mjd + 2400000.5
+    tmins = ( jd-jd.min() )*24.*60.
     hatp18_spectra = np.row_stack( hatp18_spectra )
     hatp18_disp_pixs = np.row_stack( hatp18_disp_pixs )
     hatp18_skyppix = np.row_stack( hatp18_skyppix )
@@ -235,8 +240,212 @@ def combine_spectra():
     plt.title('HAT-P-18')
     plt.ylabel('Relative Flux')
     plt.xlabel('Time (minutes)')
-    pdb.set_trace()
+
+    hatp18 = { 'spectra':hatp18_spectra, 'disp_pixs':hatp18_disp_pixs, 'skyppix':hatp18_skyppix, 'nappixs':hatp18_nappixs, 'fwhm':hatp18_fwhm  }
+    ref = { 'spectra':ref_spectra, 'disp_pixs':ref_disp_pixs, 'skyppix':ref_skyppix, 'nappixs':ref_nappixs, 'fwhm':ref_fwhm  }
+    output = { 'jd':jd, 'airmass':airmass, 'hatp18':hatp18, 'ref':ref }
+
+    opath = '/home/tevans/analysis/gtc/hatp18/temp_spectra.pkl'
+    ofile = open( opath, 'w' )
+    cPickle.dump( output, ofile )
+    ofile.close()
+    print '\nSaved: {0}'.format( opath )
+
     return None
     
     
+def quick_test():
+
+    ifile = open( '/home/tevans/analysis/gtc/hatp18/temp_spectra.pkl' )
+    z = cPickle.load( ifile )
+    ifile.close()
+    jd = z['jd']
+    airmass = z['airmass']
+    x1 = z['hatp18']['disp_pixs']
+    fwhm1 = z['hatp18']['fwhm']
+    sky1 = np.sum( z['hatp18']['skyppix'], axis=1 )
+    x2 = z['ref']['disp_pixs']
+    fwhm2 = z['ref']['fwhm']
+    sky2 = np.sum( z['ref']['skyppix'], axis=1 )
+    s2 = z['hatp18']['spectra']
+    s1 = z['ref']['spectra']
+
     
+    ix = 200
+
+    w1 = np.sum( s1[:,ix:], axis=1 )
+    w2 = np.sum( s2[:,ix:], axis=1 )
+    ixs = ( w1>0 )*( w2> 0 )
+    jd = jd[ixs]
+    s1 = s1[ixs,:]
+    s2 = s2[ixs,:]
+    w1 = w1[ixs]
+    w2 = w2[ixs]
+    wa = w2/w1
+    fwhm1 = fwhm1[ixs]
+    fwhm2 = fwhm2[ixs]
+    sky1 = sky1[ixs]
+    sky2 = sky2[ixs]
+    airmass = airmass[ixs]
+
+    wb = np.sum( s2[:,ix:]/s1[:,ix:], axis=1 )
+    
+    wa /= wa[0]
+    wb /= wb[0]
+
+    plt.figure()
+    plt.plot( jd, wa, '.r' )
+    plt.plot( jd, wb, '.b' )
+
+
+    n = len( jd )
+    offset = np.ones( n )
+
+    dxs = []
+
+    dpix = 15
+    ix = 440
+    chB1 = np.sum( s1[:,ix:ix+dpix+1], axis=1 )
+    chB2 = np.sum( s2[:,ix:ix+dpix+1], axis=1 )
+    dxs += [ [ ix, ix+dpix ] ]
+    chB = chB2/chB1
+    chB /= chB[0]
+    chBdiff = chB/wa
+    phi = np.column_stack( [ offset, jd ] )
+    c = np.linalg.lstsq( phi, chBdiff )[0]
+    ttrend = np.dot( phi, c )
+    chBdiff /= ttrend
+    med = np.median( chBdiff )
+    chBdiff -= med
+    chBdiff *= 1e6
+    sig = np.std( chBdiff )
+    nsig = np.abs( chBdiff/sig )
+    ixsB = nsig<4
+
+    ix = 915
+    chV1 = np.sum( s1[:,ix:ix+dpix+1], axis=1 )
+    chV2 = np.sum( s2[:,ix:ix+dpix+1], axis=1 )
+    dxs += [ [ ix, ix+dpix ] ]
+    chV = chV2/chV1
+    chV /= chV[0]
+    chVdiff = chV/wa
+    phi = np.column_stack( [ offset, jd ] )
+    c = np.linalg.lstsq( phi, chVdiff )[0]
+    ttrend = np.dot( phi, c )
+    chVdiff /= ttrend
+    med = np.median( chVdiff )
+    chVdiff -= med
+    chVdiff *= 1e6
+    sig = np.std( chVdiff )
+    nsig = np.abs( chVdiff/sig )
+    ixsV = nsig<4
+
+    ix = 1250
+    chR1 = np.sum( s1[:,ix:ix+dpix+1], axis=1 )
+    chR2 = np.sum( s2[:,ix:ix+dpix+1], axis=1 )
+    dxs += [ [ ix, ix+dpix ] ]
+    chR = chR2/chR1
+    chR /= chR[0]
+    chRdiff = chR/wa
+    chRdiff /= chRdiff[0]
+    phi = np.column_stack( [ offset, jd ] )
+    c = np.linalg.lstsq( phi, chRdiff )[0]
+    ttrend = np.dot( phi, c )
+    chRdiff /= ttrend
+    med = np.median( chRdiff )
+    chRdiff -= med
+    chRdiff *= 1e6
+    sig = np.std( chRdiff )
+    nsig = np.abs( chRdiff/sig )
+    ixsR = nsig<4
+    
+    plt.figure()
+    plt.plot(s2[0,:],'-b')
+    plt.plot(s1[0,:],'-r')
+    for i in range( 3 ):
+        print dxs[i]
+        plt.axvspan( dxs[i][0], dxs[i][1], color=0.6*np.ones(3), alpha=0.5 )
+    plt.xlabel( 'Dispersion axis (pixel)' )
+    plt.ylabel( 'Flux' )
+    plt.title( 'HAT-P-18' )
+
+    plt.figure()
+    plt.subplot( 411 )
+    ax = plt.gca()
+    plt.plot( jd, wa, '-b' )
+    plt.plot( jd, wb, '-r' )
+    plt.ylabel( 'white' )
+    plt.subplot( 412, sharex=ax )
+    plt.plot( jd, chB, '-g' )
+    plt.ylabel( 'B' )
+    plt.subplot( 413, sharex=ax )
+    plt.plot( jd, chV, '-g' )
+    plt.ylabel( 'V' )
+    plt.subplot( 414, sharex=ax )
+    plt.plot( jd, chR, '-g' )
+    plt.ylabel( 'R' )
+    plt.xlabel( 'JD' )
+    plt.suptitle( 'HAT-P-18' )
+
+    nbins = int( np.round( n/25. ) )
+    t = ( jd-jd.min() )*24*60
+
+    plt.figure()
+
+    ylow = -10000
+    yupp = 10000
+
+    plt.subplot( 611 )
+    ax = plt.gca()
+    stdB_1 = np.std( chBdiff[ixsB] )
+    plt.plot( t[ixsB], chBdiff[ixsB], '-g', label='std_1={0:.0f}ppm'.format( stdB_1 ) )
+    ax0 = plt.gca()
+    tb, yb, stdvs, npb = utils.bin_1d( t[ixsB], chBdiff[ixsB], nbins=nbins )
+    stdB_25 = np.std( yb[npb>20] )
+    plt.plot( tb[npb>20], yb[npb>20], '-or', label='std_25={0:.0f}ppm'.format( stdB_25 ) )
+    plt.legend( numpoints=1 )
+    plt.ylabel( 'B resids' )
+    plt.ylim( [ ylow, yupp ] )
+
+    plt.subplot( 612, sharex=ax )
+    stdV_1 = np.std( chVdiff[ixsV] )
+    plt.plot( t[ixsV], chVdiff[ixsV], '-g', label='std_1={0:.0f}ppm'.format( stdV_1 ) )
+    ax0 = plt.gca()
+    tb, yb, stdvs, npb = utils.bin_1d( t[ixsV], chVdiff[ixsV], nbins=nbins )
+    stdV_25 = np.std( yb[npb>20] )
+    plt.plot( tb[npb>20], yb[npb>20], '-or', label='std_25={0:.0f}ppm'.format( stdV_25 ) )
+    plt.legend( numpoints=1 )
+    plt.ylabel( 'V resids' )
+    plt.ylim( [ ylow, yupp ] )
+
+    plt.subplot( 613, sharex=ax )
+    stdR_1 = np.std( chRdiff[ixsR] )
+    plt.plot( t[ixsR], chRdiff[ixsR], '-g', label='std_1={0:.0f}ppm'.format( stdR_1 ) )
+    ax0 = plt.gca()
+    tb, yb, stdvs, npb = utils.bin_1d( t[ixsR], chRdiff[ixsR], nbins=nbins )
+    stdR_25 = np.std( yb[npb>20] )
+    plt.plot( tb[npb>20], yb[npb>20], '-or', label='std_25={0:.0f}ppm'.format( stdR_25 ) )
+    plt.legend( numpoints=1 )
+    plt.ylabel( 'R resids' )
+    plt.ylim( [ ylow, yupp ] )
+
+    plt.subplot( 614, sharex=ax )
+    plt.plot( t, fwhm1, '-r' )
+    plt.plot( t, fwhm2, '-b' )
+    plt.ylabel( 'FWHM' )
+    plt.subplot( 615, sharex=ax )
+    plt.plot( t, sky1/np.median( sky1 ), '-r' )
+    plt.plot( t, sky2/np.median( sky1 ), '-b' )
+    plt.ylabel( 'Sky' )
+    plt.subplot( 616, sharex=ax )
+    plt.plot( t, airmass, '-g' )
+    plt.ylabel( 'Airm' )
+    plt.xlabel( 'time (minutes)' )
+    
+    plt.suptitle( 'HAT-P-18' )
+    ax.set_xlim( [ 0, 370 ] )
+
+    pdb.set_trace()
+    return None
+
+   
