@@ -107,7 +107,7 @@ def calibrate_raw_science():
     return None
 
 
-def prep_stellar_obj( flatfield=False ):
+def prep_stellar_obj( spectral_ap_radius=None, sky_inner_radius=None, flatfield=False ):
     #todo + include call to combine_spectra() in reduction.py
     adir = '/home/tevans/analysis/gtc/hatp19'
     science_images_full_list_filename = 'cal_science_noflatfield.lst'
@@ -115,7 +115,9 @@ def prep_stellar_obj( flatfield=False ):
     science_images_list_filename = 'science_images.lst' # should apply to all stars...
     badpix_maps_list_filename = 'badpix_maps.lst' # should apply to all stars...
     science_traces_list_filename = [ 'science_traces_reference.lst', 'science_traces_hatp19.lst' ]
-    science_spectra_list_filename = [ 'science_spectra_reference.lst', 'science_spectra_hatp19.lst' ]
+    ext = '_ap{0:.2f}bg{1:.2f}'.format( spectral_ap_radius, sky_inner_radius )
+    science_spectra_list_filename = [ 'science_spectra_reference{0}.lst'.format( ext ), \
+                                      'science_spectra_hatp19{0}.lst'.format( ext ) ]
     ddir_science = os.path.join( ddir, 'object' )
     ddir_arc = os.path.join( ddir, 'arc' )
     star_names = [ 'reference',  'hatp19' ]
@@ -157,11 +159,15 @@ def prep_stellar_obj( flatfield=False ):
                                           wavcal_crossdisp_bounds=wavcal_crossdisp_bounds, \
                                           wavcal_disp_bounds=wavcal_disp_bounds, \
                                           crossdisp_bounds=crossdisp_bounds, disp_bounds=disp_bounds  )
-    stellar.calibrate_wavelength_scale( make_plots=True, poly_order=3 )
-    pdb.set_trace()
 
     return stellar
 
+
+def calibrate_wavelength_scale( spectral_ap_radius=None, sky_inner_radius=None, \
+                                flatfield=False, make_plots=True, poly_order=3 ):
+    stellar = prep_stellar_obj( spectral_ap_radius=spectral_ap_radius, sky_inner_radius=sky_inner_radius, \
+                                flatfield=flatfield )
+    stellar.calibrate_wavelength_scale( make_plots=make_plots, poly_order=poly_order )
 
 def run_all():
     #identify_bad_pixels()
@@ -171,8 +177,12 @@ def run_all():
 
 
 def run_extraction_grid():
-    spectral_ap_radii = [ 20, 30, 40, 50 ]
-    sky_inner_radii_ext = [ 0, 15, 30 ]
+    flatfield = False
+    wavcal_poly_order = 3
+    #spectral_ap_radii = [ 20, 30, 40, 50 ]
+    #sky_inner_radii_ext = [ 0, 15, 30 ]
+    spectral_ap_radii = [ 30 ]
+    sky_inner_radii_ext = [ 15 ]
     bw = 30
     n = len( spectral_ap_radii )
     m = len( sky_inner_radii_ext )
@@ -181,7 +191,10 @@ def run_extraction_grid():
         r = spectral_ap_radii[i]
         for j in range( m ):
             s = r + sky_inner_radii_ext[j]
-            extract_spectra( spectral_ap_radius=r, sky_inner_radius=s, sky_band_width=bw )
+            extract_spectra( spectral_ap_radius=r, sky_inner_radius=s, sky_band_width=bw, flatfield=flatfield )
+            calibrate_wavelength_scale( spectral_ap_radius=r, sky_inner_radius=s, sky_band_width=bw, \
+                                        make_plots=True, flatfield=flatfield, poly_order=wavcal_poly_order )
+            pdb.set_trace()
     return None
 
 
@@ -195,11 +208,13 @@ def fit_traces():
     stellar.fit_traces( make_plots=True )
     return None
 
-def extract_spectra( spectral_ap_radius=30, sky_inner_radius=45, sky_band_width=5 ):
-    stellar = prep_stellar_obj()
+def extract_spectra( spectral_ap_radius=30, sky_inner_radius=45, sky_band_width=5, flatfield=False ):
+    stellar = prep_stellar_obj( spectral_ap_radius=spectral_ap_radius, sky_inner_radius=sky_inner_radius, \
+                                flatfield=flatfield )
     image_filenames = np.loadtxt( os.path.join( stellar.adir, stellar.science_images_list ), dtype=str )
-    stellar.spectra_filenames = make_spectra_filenames( image_filenames, spectral_ap_radius=spectral_ap_radius, \
-                                                        sky_inner_radius=sky_inner_radius )
+    stellar.science_spectra_filenames = make_spectra_filenames( image_filenames, \
+                                                                spectral_ap_radius=spectral_ap_radius, \
+                                                                sky_inner_radius=sky_inner_radius )
     stellar.spectral_ap_radius = spectral_ap_radius
     stellar.sky_inner_radius = sky_inner_radius
     stellar.sky_band_width = sky_band_width
@@ -319,11 +334,12 @@ def crosscor_spectra( spectral_ap_radius=30, sky_inner_radius=45, remove_continu
         
     return None
 
-def combine_spectra():
+def combine_spectra( spectral_ap_radius=None, sky_inner_radius=None, flatfield=False ):
     # todo = add something to this routines that extracts
     # auxiliary variables, including opening each image and
     # reading stuff out of the headers like time stamp.
-    stellar = prep_stellar_obj()
+    stellar = prep_stellar_obj( spectral_ap_radius=spectral_ap_radius, sky_inner_radius=sky_inner_radius, \
+                                flatfield=flatfield )
     image_list_filepath = os.path.join( stellar.adir, stellar.science_images_list )
     image_list = np.loadtxt( image_list_filepath, dtype=str )
     nimages = len( image_list )
@@ -339,11 +355,13 @@ def combine_spectra():
     airmass = []
     hatp19_spectra = []
     hatp19_disp_pixs = []
+    hatp19_wav = []
     hatp19_skyppix = []
     hatp19_nappixs = []
     hatp19_fwhm = []
     ref_spectra = []
     ref_disp_pixs = []
+    ref_wav = []
     ref_skyppix = []
     ref_nappixs = []
     ref_fwhm = []    
@@ -358,6 +376,7 @@ def combine_spectra():
         hatp19_spectrum = fitsio.FITS( hatp19_spectrum_filepath )
         hatp19_spectra += [ hatp19_spectrum[1].read_column( 'apflux' ) ]
         hatp19_disp_pixs += [ hatp19_spectrum[1].read_column( 'disp_pixs' ) ]
+        hatp19_wav += [ hatp19_spectrum[1].read_column( 'wav' ) ]
         hatp19_skyppix += [ hatp19_spectrum[1].read_column( 'skyppix' ) ]
         hatp19_nappixs += [ hatp19_spectrum[1].read_column( 'nappixs' ) ]
         hatp19_fwhm += [ hatp19_spectrum[1].read_header()['FWHM'] ]
@@ -366,6 +385,7 @@ def combine_spectra():
         ref_spectrum = fitsio.FITS( ref_spectrum_filepath )
         ref_spectra += [ ref_spectrum[1].read_column( 'apflux' ) ]
         ref_disp_pixs += [ ref_spectrum[1].read_column( 'disp_pixs' ) ]
+        ref_wav += [ ref_spectrum[1].read_column( 'wav' ) ]
         ref_skyppix += [ ref_spectrum[1].read_column( 'skyppix' ) ]
         ref_nappixs += [ ref_spectrum[1].read_column( 'nappixs' ) ]
         ref_fwhm += [ ref_spectrum[1].read_header()['FWHM'] ]
@@ -382,12 +402,14 @@ def combine_spectra():
     tmins = ( jd-jd.min() )*24.*60.
     hatp19_spectra = np.row_stack( hatp19_spectra )
     hatp19_disp_pixs = np.row_stack( hatp19_disp_pixs )[0,:]
+    hatp19_wav = np.row_stack( hatp19_wav )[0,:]
     hatp19_skyppix = np.row_stack( hatp19_skyppix )
     hatp19_nappixs = np.row_stack( hatp19_nappixs )
     hatp19_fwhm = np.array( hatp19_fwhm )
     
     ref_spectra = np.row_stack( ref_spectra )
     ref_disp_pixs = np.row_stack( ref_disp_pixs )[0,:]
+    ref_wav = np.row_stack( ref_wav )[0,:]
     ref_skyppix = np.row_stack( ref_skyppix )
     ref_nappixs = np.row_stack( ref_nappixs )
     ref_fwhm = np.array( ref_fwhm )
@@ -410,8 +432,8 @@ def combine_spectra():
     plt.ylabel('Relative Flux')
     plt.xlabel('Time (minutes)')
 
-    hatp19 = { 'spectra':hatp19_spectra, 'disp_pixs':hatp19_disp_pixs, 'skyppix':hatp19_skyppix, 'nappixs':hatp19_nappixs, 'fwhm':hatp19_fwhm  }
-    ref = { 'spectra':ref_spectra, 'disp_pixs':ref_disp_pixs, 'skyppix':ref_skyppix, 'nappixs':ref_nappixs, 'fwhm':ref_fwhm  }
+    hatp19 = { 'spectra':hatp19_spectra, 'disp_pixs':hatp19_disp_pixs, 'wav':hatp19_wav, 'skyppix':hatp19_skyppix, 'nappixs':hatp19_nappixs, 'fwhm':hatp19_fwhm  }
+    ref = { 'spectra':ref_spectra, 'disp_pixs':ref_disp_pixs, 'wav':ref_wav, 'skyppix':ref_skyppix, 'nappixs':ref_nappixs, 'fwhm':ref_fwhm  }
     output = { 'jd':jd, 'airmass':airmass, 'hatp19':hatp19, 'ref':ref }
 
     opath = '/home/tevans/analysis/gtc/hatp19/temp_spectra.pkl'
@@ -421,6 +443,47 @@ def combine_spectra():
     print '\nSaved: {0}'.format( opath )
 
     return None
+
+def Na_lightcurve():
+    ifile = open( '/home/tevans/analysis/gtc/hatp19/temp_spectra.pkl' )
+    z = cPickle.load( ifile )
+    ifile.close()
+    jd = z['jd']
+    spectra1 = z['hatp19']['spectra']
+    spectra2 = z['ref']['spectra']
+    wav1 = z['hatp19']['wav']
+    wav2 = z['ref']['wav']
+    Na_center = 5892
+    Na_bw = 30
+    wide_bw = 300
+    Na_cuton = Na_center-Na_bw
+    Na_cutoff = Na_center+Na_bw
+    wide_cuton = Na_center-wide_bw
+    wide_cutoff = Na_center+wide_bw
+
+    nav = 30 
+    ixsNa1 = (wav1>=Na_cuton)*(wav1<=Na_cutoff)
+    ixsNa2 = (wav2>=Na_cuton)*(wav2<=Na_cutoff)
+    fNa1 = np.sum( spectra1[:,ixsNa1], axis=1 )
+    fNa2 = np.sum( spectra2[:,ixsNa2], axis=1 )
+    fNa = fNa2/fNa1
+    fNa /= np.mean( fNa[:nav] )
+    ixsw1 = (wav1>=wide_cuton)*(wav1<=wide_cutoff)
+    ixsw2 = (wav2>=wide_cuton)*(wav2<=wide_cutoff)
+    fw1 = np.sum( spectra1[:,ixsw1], axis=1 )
+    fw2 = np.sum( spectra2[:,ixsw2], axis=1 )
+    fw = fw2/fw1
+    fw /= np.mean( fw[:nav] )
+    plt.figure()
+    plt.plot( jd, fNa, '-b' )
+    plt.plot( jd, fw, '-r' )
+    plt.figure()
+    plt.plot(wav1,spectra1[0,:],'-r')
+    plt.plot(wav1,spectra1[0,:],'.r')
+    plt.plot(wav1[ixsNa1],spectra1[0,:][ixsNa1],'.k')
+    plt.axvline(Na_cuton)
+    plt.axvline(Na_cutoff)
+    pdb.set_trace()
 
 def quick_test():
 
