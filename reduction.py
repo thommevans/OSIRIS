@@ -1,5 +1,5 @@
 import fitsio
-import pdb, sys, os
+import pdb, sys, os, copy
 import numpy as np
 import matplotlib.pyplot as plt
 from spectroscopy_dev.spectroscopy import stellar as stellar_module
@@ -25,7 +25,11 @@ def median_combine_frames( list_filepath, ddir_output, median_filename, frame_ty
     """
 
     frames = np.loadtxt( list_filepath, dtype=str )
-    nframes = len( frames )
+    if np.ndim( frames )==0:
+        nframes = 1
+        frames = [ str( frames ) ]
+    else:
+        nframes = len( frames )
     exptimes = np.zeros( nframes )
     print '\nReading in individual frames...'
     cube1 = []
@@ -211,7 +215,7 @@ def fit_traces( stellar ): # THIS IS A REDUNDANT ROUTINE PROBABLY
     return None
     
 
-def prep_stellar_obj( adir='', ddir_science='', ddir_arc='', n_exts=2, star_names=[], science_images_full_list_filename='', badpix_maps_full_list_filename='', science_images_list_filename='', badpix_maps_list_filename='', science_traces_list_filename='', science_spectra_list_filename='', disp_axis=0, crossdisp_axis=1, crossdisp_bounds=[], disp_bounds=[] ):
+def prep_stellar_obj( adir='', ddir_science='', ddir_arc='', n_exts=2, star_names=[], science_images_full_list_filename='', badpix_maps_full_list_filename='', science_images_list_filename='', badpix_maps_list_filename='', science_traces_list_filename='', marc_filename='', science_spectra_list_filename='', disp_axis=0, crossdisp_axis=1, crossdisp_bounds=[], disp_bounds=[], wavcal_fiducial_lines=[], wavcal_crossdisp_bounds=[], wavcal_disp_bounds=[] ):
     """
     THIS SHOULD BE GENERALISED TO APPLY TO ARBITRARY GTC DATASETS
     """
@@ -263,9 +267,10 @@ def prep_stellar_obj( adir='', ddir_science='', ddir_arc='', n_exts=2, star_name
     stellar.tracefit_kwargs = { 'method':'linear_interpolation', 'binw_disp':30 }
 
     stellar.wcal_kws = {}
-    marc_filename = '' # todo = make a master arc
     stellar.wcal_kws['marc_file'] = os.path.join( ddir_arc, marc_filename )
-    stellar.wcal_kws['fiducial_lines'] = [] # todo = fiducial wavelengths in units of nm
+    stellar.wcal_kws['fiducial_lines'] = wavcal_fiducial_lines
+    stellar.wcal_kws['crossdisp_pixbounds'] = wavcal_crossdisp_bounds
+    stellar.wcal_kws['disp_pixbounds'] = wavcal_disp_bounds
 
     # Bounding boxes for the stars in pixel coordinates:
     if n_exts>1:
@@ -295,13 +300,16 @@ def prep_stellar_obj( adir='', ddir_science='', ddir_arc='', n_exts=2, star_name
     return stellar
 
 
-def crosscor( spectra, ref_spectrum, max_shift=1, resample_factor=10, disp_bound_ixs=[], smoothing_sig=None ):
+def crosscor( spectra_in, ref_spectrum, max_shift=1, resample_factor=10, disp_bound_ixs=[], spectra_smoothing_sig=None, continuum_smoothing_sig=None, remove_continuum=False ):
+    spectra = spectra_in.copy()
     # Max shift has to be an integer number of pixels:
     max_shift = int( np.round( max_shift ) )
-    if smoothing_sig!=None:
-        ref_spectrum_smooth = scipy.ndimage.filters.gaussian_filter1d( ref_spectrum, smoothing_sig )
+    if spectra_smoothing_sig!=None:
+        ref_spectrum_smooth = scipy.ndimage.filters.gaussian_filter1d( ref_spectrum, spectra_smoothing_sig )
     else:
         ref_spectrum_smooth = ref_spectrum
+    if remove_continuum==True:
+        ref_spectrum_smooth -= scipy.ndimage.filters.gaussian_filter1d( ref_spectrum_smooth, continuum_smoothing_sig )
     ix0 = disp_bound_ixs[0]
     ix1 = disp_bound_ixs[1]
     nframes, ndisp = np.shape( spectra )
@@ -316,6 +324,9 @@ def crosscor( spectra, ref_spectrum, max_shift=1, resample_factor=10, disp_bound
     npad = max_shift# + 1
     xi = np.arange( -npad, ndisp+npad )
     spectra_padded = np.zeros( [ nframes, npad+ndisp+npad ] )
+    if spectra_smoothing_sig!=None:
+        for j in range( nframes ):
+            spectra[j,:] = scipy.ndimage.filters.gaussian_filter1d( spectra[j,:], spectra_smoothing_sig )
     spectra_padded[:,npad:npad+ndisp] = spectra
     pad = np.zeros( npad )
     ref_spectrumi = np.concatenate( [ pad, ref_spectrum_smooth, pad ] )
@@ -326,6 +337,11 @@ def crosscor( spectra, ref_spectrum, max_shift=1, resample_factor=10, disp_bound
     shifted = np.zeros( [ nshifts, ndisp ] )
     for j in range( nshifts ):
         shifted[j,:] = interpf( x+dshifts[j] )
+        if spectra_smoothing_sig!=None:
+            shifted[j,:] = scipy.ndimage.filters.gaussian_filter1d( shifted[j,:], spectra_smoothing_sig )
+        if remove_continuum==True:
+            shifted[j,:] -= scipy.ndimage.filters.gaussian_filter1d( shifted[j,:], continuum_smoothing_sig )
+
     # Now loop over the individual spectra and determine which of the 
     # shifted reference spectra gives the best match:
     wavshifts = np.zeros( nframes )
@@ -338,28 +354,43 @@ def crosscor( spectra, ref_spectrum, max_shift=1, resample_factor=10, disp_bound
         rms_i = np.zeros( nshifts )
         diffs = np.zeros( [ nshifts, ndisp ] )
         vstretches_i = np.zeros( nshifts )
-        if smoothing_sig!=None:
-            spectrum_smooth_i = scipy.ndimage.filters.gaussian_filter1d( spectra[i,:], smoothing_sig )
-        else:
-            spectrum_smooth_i = spectra[i,:]
+        spectrum_smooth_i = spectra[i,:]
+        target = spectrum_smooth_i
+        if remove_continuum==True:
+            target_continuum = scipy.ndimage.filters.gaussian_filter1d( target, continuum_smoothing_sig )
+            target -= target_continuum
         fits = []
         for j in range( nshifts ):
-            A[:,1] = shifted[j,:]
-            b = np.reshape( spectrum_smooth_i, [ ndisp, 1 ] )
+            basis = shifted[j,:]
+            if dshifts[j]==0:
+                plt.figure()
+                plt.plot(target,'-r')
+                plt.plot(basis,'-k')
+                pdb.set_trace()
+                
+            A[:,1] = basis
+            b = np.reshape( target, [ ndisp, 1 ] )
             res = np.linalg.lstsq( A, b )
             c = res[0].flatten()
             fit = np.dot( A, c )
             vstretches_i[j] = c[1]
-            diffs[j,:] = spectrum_smooth_i - fit
+            diffs[j,:] = target - fit
             rms_i[j] = np.sqrt( np.mean( diffs[j,:][ix0:ix1+1]**2. ) )
             fits += [ fit ]
         ix = np.argmin( rms_i )
-        dspec[i,:] = diffs[ix,:]/ref_spectrum_smooth
+        dspec[i,:] = diffs[ix,:]/ref_spectrum_smooth # this needs updating for remove_continuum==True
         wavshifts[i] = dshifts[ix]
         vstretches[i] = vstretches_i[ix]
         interpf_i = scipy.interpolate.interp1d( xi, spectra_padded[i,:], kind=interpolation )
         spectra_shifted[i,:] = interpf_i( x-dshifts[ix] )
         print '... frame {0} of {1} --> {2:.3f} pix'.format( i+1, nframes, dshifts[ix] )
+        if 0*(np.abs(dshifts[ix])>0.2):
+            plt.figure()
+            plt.plot(target,'-k',label='target science spectrum')
+            plt.plot(fits[ix],'-r',label='shifted')
+            plt.plot(ref_spectrum_smooth,'-c',label='unshifted')
+            plt.legend()
+            pdb.set_trace()
         if 0*np.abs(dshifts[ix])>0.2:
             plt.figure()
             A[:,1] = shifted[ix,:]

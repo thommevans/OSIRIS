@@ -14,52 +14,69 @@ ddir = '/media/hdisk1/data1/gtc/hatp19/GTC2018-09ESO/OB0058'
 adir = '/home/tevans/analysis/gtc/hatp19'
 
 
-def make_master_cals():
+def make_master_cals( bias=True, flat=True, arc=True ):
 
     # Create the list of biases:
-    n_first = 407479
-    n_last = 407528
-    framen = range( n_first, n_last+1 )
-    nframes = len( framen )
-    ddir_bias = os.path.join( ddir, 'bias' )
-    bias_frames = []
-    for i in range( nframes ):
-        bias_frames += [ '0000{0:.0f}-20130728-OSIRIS-OsirisBias.fits'.format( framen[i] ) ]
-    bias_list_filename = 'bias.lst'
-    bias_list_filepath = os.path.join( adir, bias_list_filename )
-    np.savetxt( bias_list_filepath, np.array( bias_frames, dtype=str ), fmt='%s' )
-    # Generate the master bias:
-    ddir_bias = os.path.join( ddir, 'bias' )
-    reduction.median_combine_frames( bias_list_filepath, ddir_bias, 'mbias.fits', frame_type='bias', n_exts=N_EXTS )
+    if bias==True:
+        n_first = 407479
+        n_last = 407528
+        framen = range( n_first, n_last+1 )
+        nframes = len( framen )
+        ddir_bias = os.path.join( ddir, 'bias' )
+        bias_frames = []
+        for i in range( nframes ):
+            bias_frames += [ '0000{0:.0f}-20130728-OSIRIS-OsirisBias.fits'.format( framen[i] ) ]
+        bias_list_filename = 'bias.lst'
+        bias_list_filepath = os.path.join( adir, bias_list_filename )
+        np.savetxt( bias_list_filepath, np.array( bias_frames, dtype=str ), fmt='%s' )
+        # Generate the master bias:
+        ddir_bias = os.path.join( ddir, 'bias' )
+        reduction.median_combine_frames( bias_list_filepath, ddir_bias, 'mbias.fits', frame_type='bias', n_exts=N_EXTS )
     
     # Create the list of flats:
-    n_first = 407531
-    n_last = 407630
-    framen = range( n_first, n_last+1 )
-    nframes = len( framen )
-    ddir_flat = os.path.join( ddir, 'flat' )
-    flat_frames = []
-    for i in range( nframes ):
-        flat_frames += [ '0000{0:.0f}-20130728-OSIRIS-OsirisSpectralFlat.fits'.format( framen[i] ) ]
-    flat_list_filename = 'flat.lst'
-    flat_list_filepath = os.path.join( adir, flat_list_filename )
-    np.savetxt( flat_list_filepath, np.array( flat_frames, dtype=str ), fmt='%s' )
-    # Generate the master flat:
-    ddir_flat = os.path.join( ddir, 'flat' )
-    reduction.median_combine_frames( flat_list_filepath, ddir_flat, 'mflat.fits', frame_type='flat', n_exts=N_EXTS )
+    if flat==True:
+        n_first = 407531
+        n_last = 407630
+        framen = range( n_first, n_last+1 )
+        nframes = len( framen )
+        ddir_flat = os.path.join( ddir, 'flat' )
+        flat_frames = []
+        for i in range( nframes ):
+            flat_frames += [ '0000{0:.0f}-20130728-OSIRIS-OsirisSpectralFlat.fits'.format( framen[i] ) ]
+        flat_list_filename = 'flat.lst'
+        flat_list_filepath = os.path.join( adir, flat_list_filename )
+        np.savetxt( flat_list_filepath, np.array( flat_frames, dtype=str ), fmt='%s' )
+        # Generate the master flat:
+        ddir_flat = os.path.join( ddir, 'flat' )
+        reduction.median_combine_frames( flat_list_filepath, ddir_flat, 'mflat.fits', frame_type='flat', n_exts=N_EXTS )
 
-    # Create the list of arcs:
-    framens = [ 407634, 407636 ]
-    ddir_arc = os.path.join( ddir, 'arc' )
-    arc_frames = []
-    for i in framens:
-        arc_frames += [ '0000{0:.0f}-20130728-OSIRIS-OsirisCalibrationLamp.fits'.format( i ) ]
-    arc_list_filename = 'arc.lst'
-    arc_list_filepath = os.path.join( adir, arc_list_filename )
-    np.savetxt( arc_list_filepath, np.array( arc_frames, dtype=str ), fmt='%s' )
-    # Generate the master arc:
-    ddir_arc = os.path.join( ddir, 'arc' )
-    reduction.median_combine_frames( arc_list_filepath, ddir_arc, 'marc.fits', frame_type='arc', n_exts=N_EXTS )
+    # Create the list of HgAr arcs:
+    if arc==True:
+        framens = [ 407634 ]
+        ddir_arc = os.path.join( ddir, 'arc' )
+        arc_frames = []
+        for i in framens:
+            arc_frames += [ '0000{0:.0f}-20130728-OSIRIS-OsirisCalibrationLamp.fits'.format( i ) ]
+        arc_list_filename = 'arc_HgAr.lst'
+        arc_list_filepath = os.path.join( adir, arc_list_filename )
+        np.savetxt( arc_list_filepath, np.array( arc_frames, dtype=str ), fmt='%s' )
+        # Generate the master HgAr arc:
+        ddir_arc = os.path.join( ddir, 'arc' )
+        reduction.median_combine_frames( arc_list_filepath, ddir_arc, 'marc_HgAr.fits', frame_type='arc', n_exts=N_EXTS )
+
+    # Create the list of Ne arcs:
+    if arc==True:
+        framens = [ 407636 ]
+        ddir_arc = os.path.join( ddir, 'arc' )
+        arc_frames = []
+        for i in framens:
+            arc_frames += [ '0000{0:.0f}-20130728-OSIRIS-OsirisCalibrationLamp.fits'.format( i ) ]
+        arc_list_filename = 'arc_Ne.lst'
+        arc_list_filepath = os.path.join( adir, arc_list_filename )
+        np.savetxt( arc_list_filepath, np.array( arc_frames, dtype=str ), fmt='%s' )
+        # Generate the master Ne arc:
+        ddir_arc = os.path.join( ddir, 'arc' )
+        reduction.median_combine_frames( arc_list_filepath, ddir_arc, 'marc_Ne.fits', frame_type='arc', n_exts=N_EXTS )
 
     return None
 
@@ -106,14 +123,26 @@ def prep_stellar_obj( flatfield=False ):
     crossdisp_axis = 1
     crossdisp_bounds = [ [ 150, 350 ], [ 510, 710 ] ]
     disp_bounds = [ [ 600, 2050 ], [ 600, 2050 ] ]
-    marc_filename = 'marc.fits'
-    star0_wavcal_crossdisp_bounds = [] #todo
-    star1_wavcal_crossdisp_bounds = [] #todo
-    star0_wavcal_disp_bounds = [] #todo
-    star1_wavcal_disp_bounds = [] #todo
+    marc_filename = 'marc_HgAr.fits'
+    star0_wavcal_crossdisp_bounds = crossdisp_bounds[0]
+    star1_wavcal_crossdisp_bounds = crossdisp_bounds[1]
+    wavcal_fiducial_lines = [ 4046.563, 5460.735, 7067.21, 7272.936, 7383.981, 7635.106, \
+                              7723.98, 7948.176, 8264.522, 8521.442, 8667.944 ]
+    star0_wavcal_disp_bounds = [ [ 785, 797 ], \
+                                 [ 1186, 1204 ], \
+                                 [ 1608, 1620 ], \
+                                 [ 1659, 1675 ], \
+                                 [ 1687, 1705 ], \
+                                 [ 1752, 1767 ], \
+                                 [ 1775, 1795 ], \
+                                 [ 1830, 1847 ], \
+                                 [ 1910, 1930, ], \
+                                 [ 1967, 1979], \
+                                 [ 1979, 1990] ]
+    star1_wavcal_disp_bounds = star0_wavcal_disp_bounds
     wavcal_crossdisp_bounds = [ star0_wavcal_crossdisp_bounds, star1_wavcal_crossdisp_bounds ]
     wavcal_disp_bounds = [ star0_wavcal_disp_bounds, star1_wavcal_disp_bounds ]
-    wavcal_fiducial_lines = [] #todo
+
     stellar = reduction.prep_stellar_obj( adir=adir, \
                                           science_images_full_list_filename=science_images_full_list_filename, \
                                           badpix_maps_full_list_filename=badpix_maps_full_list_filename, \
@@ -122,9 +151,14 @@ def prep_stellar_obj( flatfield=False ):
                                           science_traces_list_filename=science_traces_list_filename, \
                                           science_spectra_list_filename=science_spectra_list_filename, \
                                           ddir_science=ddir_science, ddir_arc=ddir_arc, n_exts=N_EXTS, \
-                                          star_names=star_names, \
+                                          star_names=star_names, marc_filename=marc_filename, \
                                           disp_axis=disp_axis, crossdisp_axis=crossdisp_axis, \
+                                          wavcal_fiducial_lines=wavcal_fiducial_lines, \
+                                          wavcal_crossdisp_bounds=wavcal_crossdisp_bounds, \
+                                          wavcal_disp_bounds=wavcal_disp_bounds, \
                                           crossdisp_bounds=crossdisp_bounds, disp_bounds=disp_bounds  )
+    stellar.calibrate_wavelength_scale( make_plots=True, poly_order=3 )
+    pdb.set_trace()
 
     return stellar
 
@@ -192,7 +226,7 @@ def make_shifted_spectra_filenames( spectra_filenames ):
     return new_filenames
     
 
-def crosscor_spectra( spectral_ap_radius=30, sky_inner_radius=45, smoothing_sig=20 ):
+def crosscor_spectra( spectral_ap_radius=30, sky_inner_radius=45, remove_continuum=False, spectra_smoothing_sig=5, continuum_smoothing_sig=20 ):
 
     stellar = prep_stellar_obj()
     image_filenames = np.loadtxt( os.path.join( stellar.adir, stellar.science_images_list ), dtype=str )
@@ -225,7 +259,9 @@ def crosscor_spectra( spectral_ap_radius=30, sky_inner_radius=45, smoothing_sig=
         ref_spectrum_k = np.median( spectra_k[:12,:], axis=0 )
         dwavs_k, spectra_shifted_k, dspec_k = reduction.crosscor( spectra_k, ref_spectrum_k, \
                                                                   max_shift=max_shift_pix, \
-                                                                  smoothing_sig=smoothing_sig, \
+                                                                  spectra_smoothing_sig=spectra_smoothing_sig, \
+                                                                  continuum_smoothing_sig=continuum_smoothing_sig, \
+                                                                  remove_continuum=remove_continuum, \
                                                                   disp_bound_ixs=disp_bound_ixs, \
                                                                   resample_factor=resample_factor )
         dwavs += [ dwavs_k ]
@@ -268,14 +304,16 @@ def crosscor_spectra( spectral_ap_radius=30, sky_inner_radius=45, smoothing_sig=
         print 'should be lower than this ', rms0
     plt.figure()
     plt.subplot(211)
-    w = np.sum( spectra_shifted, axis=1 )
-    w /= w[0]
-    plt.plot( w, '-k' )
+    w0 = np.sum( spectra_shifted[0], axis=1 )
+    w1 = np.sum( spectra_shifted[1], axis=1 )
+    w0 /= w0[0]
+    w1 /= w1[0]
+    plt.plot( w0/w1, '-k' )
+    #plt.plot( w1, '-b' )
+    ax = plt.gca()
     plt.subplot(212,sharex=ax)
     plt.plot( dwavs[0] )
     plt.plot( dwavs[1] )
-
-    
     
     pdb.set_trace()
         
